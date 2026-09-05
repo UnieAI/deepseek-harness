@@ -190,9 +190,8 @@ export class LocalJobRegistry extends JobRegistry {
   }
 
   list(caller?: Agent): JobSnapshot[] {
-    const session = caller?.id
     return [...this.store.values()]
-      .filter(job => job.owner === undefined || job.owner.id === session)
+      .filter(job => this.mayAccess(job, caller))
       .map(job => this.snapshot(job))
   }
 
@@ -349,12 +348,25 @@ export class LocalJobRegistry extends JobRegistry {
   }
 
   /**
-   * The isolation fence: a job with an owner is reachable only by callers
-   * whose session id matches (`!== undefined` semantics — an unowned job is
-   * open, and a no-agent caller can never match an owned one).
+   * The isolation fence.
+   *
+   * Symmetric: an owned job is reachable only by its owner, and an unowned job
+   * only by a caller that is likewise not a session.
+   *
+   * The second half is the change. An unowned job used to be "open" — listable
+   * and killable from EVERY session in the process. That is harmless when one
+   * process serves one person, and is a cross-session leak the moment it does
+   * not: `job_list` shows another session's commands and `job_output` hands
+   * over their stdout. Nothing in-tree relies on the old reach; every caller
+   * that starts a job passes an owner except bash/pwsh with no agent context,
+   * and such a job has no session that should see it either.
    */
+  private mayAccess(job: TrackedTask, caller?: Agent): boolean {
+    return job.owner === undefined ? caller === undefined : job.owner.id === caller?.id
+  }
+
   private assertAccess(job: TrackedTask, caller?: Agent): void {
-    if (job.owner !== undefined && job.owner.id !== caller?.id) {
+    if (!this.mayAccess(job, caller)) {
       throw new Error(`job ${job.id} belongs to another session`)
     }
   }

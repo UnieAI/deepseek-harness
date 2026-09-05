@@ -364,21 +364,24 @@ describe('job_list', () => {
     const listed = await call(ctx, 'job_list', {}, alice)
     if (listed.isError) throw new Error('expected job_list success')
     const listedValue = listed.value as Array<Record<string, unknown>>
-    expect(listedValue).toHaveLength(3)
+    // The unowned `open research` job is NOT alice's to see. It used to appear
+    // here, which in a hosted process means one person's job_list showing
+    // another person's command and job_output handing over their stdout.
+    expect(listedValue).toHaveLength(2)
     expect(listedValue[0]).toMatchObject({ id: 'bash-1', kind: 'bash', label: 'pnpm test', status: 'running' })
-    expect(listedValue[2]).toMatchObject({ id: 'bash-2', kind: 'bash', label: 'build', status: 'completed', detail: 'exit code: 0' })
+    expect(listedValue[1]).toMatchObject({ id: 'bash-2', kind: 'bash', label: 'build', status: 'completed', detail: 'exit code: 0' })
     for (const job of listedValue) {
       expect(job).not.toHaveProperty('ownerSession')
       expect(job).not.toHaveProperty('reported')
     }
     expect(text(listed)).toBe([
       'bash-1 [bash] running — pnpm test',
-      'subagent-1 [subagent] running — open research',
       'bash-2 [bash] completed — build',
     ].join('\n'))
-    // A different caller sees only the unowned job.
+    // A different caller sees nothing: none of these jobs are his, and the
+    // unowned one is not his either.
     const bob = fakeAgent(ctx, 'sess-bob')
-    expect(text(await call(ctx, 'job_list', {}, bob))).toBe('subagent-1 [subagent] running — open research')
+    expect(text(await call(ctx, 'job_list', {}, bob))).toBe('(no background jobs)')
   })
 })
 

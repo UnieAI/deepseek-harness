@@ -557,7 +557,7 @@ describe('LocalJobRegistry.wait', () => {
 })
 
 describe('LocalJobRegistry owner isolation', () => {
-  it('fences read/kill/wait to the owning session and keeps unowned jobs open', async () => {
+  it('fences read/kill/wait to the owning session, unowned jobs included', async () => {
     const ctx = await harness()
     const owner = stubAgent(ctx, 'owner')
     ctx.agents.register(owner)
@@ -566,9 +566,11 @@ describe('LocalJobRegistry owner isolation', () => {
     const owned = ctx.jobs.start(producer({ owner }).spec)
     const open = ctx.jobs.start(producer().spec)
 
-    // The owner and the unowned job are reachable.
+    // The owner reaches its own job; an unowned job is reachable only by a
+    // caller that is likewise not a session.
     expect(ctx.jobs.read(owned, owner).snapshot.id).toBe(owned)
-    expect(ctx.jobs.read(open, other).snapshot.id).toBe(open)
+    expect(ctx.jobs.read(open).snapshot.id).toBe(open)
+    expect(() => ctx.jobs.read(open, other)).toThrow('belongs to another session')
 
     // A different session and a no-agent caller are rejected.
     expect(() => ctx.jobs.read(owned, other)).toThrow(`job ${owned} belongs to another session`)
@@ -577,7 +579,7 @@ describe('LocalJobRegistry owner isolation', () => {
     expect(() => ctx.jobs.read(owned)).toThrow('belongs to another session')
   })
 
-  it('list() shows only caller-owned plus unowned jobs', async () => {
+  it('list() shows a session only its OWN jobs — an unowned one is not open to it', async () => {
     const ctx = await harness()
     const alice = stubAgent(ctx, 'alice')
     const bob = stubAgent(ctx, 'bob')
@@ -588,9 +590,23 @@ describe('LocalJobRegistry owner isolation', () => {
     const bobTask = ctx.jobs.start(producer({ owner: bob }).spec)
     const openTask = ctx.jobs.start(producer({ kind: 'subagent' }).spec)
 
-    expect(ctx.jobs.list(alice).map(t => t.id)).toEqual([aliceTask, openTask])
-    expect(ctx.jobs.list(bob).map(t => t.id)).toEqual([bobTask, openTask])
+    // An unowned job used to be listed for every session. With one process per
+    // person that was harmless; hosted, it means alice sees bob's neighbours'
+    // commands and can read their output. Owned ↔ owner, unowned ↔ no session.
+    expect(ctx.jobs.list(alice).map(t => t.id)).toEqual([aliceTask])
+    expect(ctx.jobs.list(bob).map(t => t.id)).toEqual([bobTask])
     expect(ctx.jobs.list().map(t => t.id)).toEqual([openTask])
+  })
+
+  it('a session cannot read, kill or wait on an unowned job', async () => {
+    const ctx = await harness()
+    const alice = stubAgent(ctx, 'alice')
+    ctx.agents.register(alice)
+    const openTask = ctx.jobs.start(producer({ kind: 'subagent' }).spec)
+
+    expect(() => ctx.jobs.read(openTask, alice)).toThrow('belongs to another session')
+    expect(() => ctx.jobs.kill(openTask, alice)).toThrow('belongs to another session')
+    expect(() => ctx.jobs.get(openTask, alice)).toThrow('belongs to another session')
   })
 
   it('rejects an owned registration when no agent registry is mounted', async () => {
