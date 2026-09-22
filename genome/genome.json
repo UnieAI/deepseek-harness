@@ -1,0 +1,60 @@
+{
+  "$schema": "https://raw.githubusercontent.com/CosmosMind-ai/RSI-Harness/main/genome.schema.json",
+  "name": "unieai/claude-code",
+  "description": "UnieAI dsh genome: production-grade Claude-Code working mode plus a hardened security posture. Scaffold/config only; no model-weights change.",
+  "version": "0.1.0",
+  "schema_version": "3",
+  "base": "unieai",
+  "source": {
+    "methodology": "CosmosMind-ai/RSI-Harness genome (instructions, tools, skills, commands, model, runtime, policies, integrations, appearance, settings, keybindings, resources)",
+    "harness": {
+      "repo": "https://github.com/UnieAI/deepseek-harness",
+      "branch": "unieai",
+      "note": "Applied as dsh declarative config (Cordis patch + env) rather than a separate genome CLI. dsh has no generic appendSystemPrompt/tool-schema-narrowing knob, so components map onto real dsh config keys where possible and are documented as gaps otherwise."
+    }
+  },
+  "components": {
+    "instructions": {
+      "file": "instructions.md",
+      "dsh_mapping": "system-prompt.config.personaPrefix (deployment-authored system-prompt fragment); plan-mode.config.section for plan mode; agent-instructions auto-discovers AGENTS.md/CLAUDE.md."
+    },
+    "tools": {
+      "file": "security.md",
+      "dsh_mapping": "Cordis patch rows keyed by plugin id (tool-bash, tool-fs, tool-fs-search, tool-web, tool-subagent). Global disable via disabled:true; narrowing via tool-web search/fetch + caps, subagent.toolFilter, sandbox read-only preset. Model-facing names differ from plugin ids."
+    },
+    "skills": {
+      "file": null,
+      "dsh_mapping": "tool-skill + auto-discovered skill files; loaded at runtime, not genome config."
+    },
+    "commands": {
+      "file": null,
+      "dsh_mapping": "dsh command/agent presets (agent-preset composition); not carried by this genome."
+    },
+    "model": {
+      "file": null,
+      "dsh_mapping": "agent-loop agents[] (id, model, provider, maxTokens). Intentionally NOT set — the constraint is no model change; left to the deployment."
+    },
+    "runtime": {
+      "file": "cordis.patch.yml",
+      "dsh_mapping": "agent-loop.maxParallelToolCalls (1 = serial, deterministic), subagent.maxDepth, per-tool timeout-policy.timeoutMs. Whole-run maxTurns/deadline has NO declarative dsh key; use unieai-loop-guard (UNIEAI_TURN_MAX_STEPS / UNIEAI_TURN_DEADLINE_MS) and goal.maxGoalRounds (per-goal)."
+    },
+    "policies": {
+      "file": "security.md",
+      "dsh_mapping": "sandbox-policy.mode (workspace-write default; read-only for CI/reviews), permission presets (declarative), secret redaction via @unieai/uac-plugins secret-redact, subagent jobs access-control (owner isolation). No dsh native danger-command blocklist — a guard plugin is noted."
+    },
+    "integrations": {
+      "file": "security.md",
+      "dsh_mapping": "@unieai/uac-plugins selected by profile (cli/studio) and rendered as - insert: patch rows; loaded via --patch <file>."
+    },
+    "appearance": { "file": null, "dsh_mapping": "n/a (CLI)". },
+    "settings": {
+      "file": "cordis.patch.yml",
+      "dsh_mapping": "Deployment overrides live in the patch; user/local state is $DSH_HOME/cordis.patch.yml applied after the profile and before --patch."
+    },
+    "keybindings": { "file": null, "dsh_mapping": "n/a (CLI agent loop; not part of this genome)." },
+    "resources": {
+      "file": "security.md",
+      "dsh_mapping": "resource isolation and auto-discovery toggles are per-plugin; RSI-Harness resources.isolate is NOT a dsh config key (gap)."
+    }
+  }
+}
