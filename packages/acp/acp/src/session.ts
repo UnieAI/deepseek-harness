@@ -11,7 +11,7 @@ import {
   type StopReason,
 } from '@agentclientprotocol/sdk'
 import type { Agent, AgentHandle, AgentOptions, ModelSelection } from '@deepseek-ai/dsh-agent'
-import { createUserMessage, errorChain, type UserMessage } from '@deepseek-ai/dsh-llm'
+import { createAssistantMessage, createSystemMessage, createUserMessage, errorChain, type UserMessage } from '@deepseek-ai/dsh-llm'
 import { type Session, type SessionEvent, type SessionId, type TurnEndReason } from '@deepseek-ai/dsh-session'
 import { AcpContentError, admitAcpPrompt } from './content.ts'
 import { turnEndToStopReason } from './codec.ts'
@@ -102,6 +102,8 @@ export class AcpSession {
   private outputTail = Promise.resolve()
   private inflight: InflightPrompt | undefined
   private closing: Promise<void> | undefined
+  private importingHistory = false
+  private historyImported = false
   private readonly pendingSelections = new Map<string, ModelSelection>()
 
   private constructor(
@@ -194,6 +196,45 @@ export class AcpSession {
   configOptions(signal?: AbortSignal): Promise<SessionConfigOption[]> {
     this.assertActive()
     return this.modelControl.options(signal)
+  }
+
+  /** Seed a fresh session with separate, model-visible historical messages. */
+  importHistory(messages: readonly { role: 'user' | 'assistant'; content: string }[]): void {
+    this.assertActive()
+    if (this.inflight !== undefined || this.historyImported || this.agent.session.surface.nodes.length !== 0) {
+      throw invalidParams('history can only be imported once into a fresh session')
+    }
+    this.historyImported = true
+    this.importingHistory = true
+    try {
+      this.agent.session.append('turn/start', { turn: 0 })
+      // Reserve surface node zero for the system prompt the normal loop will reconcile.
+      this.agent.session.append('system/message', {
+        turn: 0, step: 0, message: createSystemMessage('', 'acp-history'),
+      }, { surfaceOp: 'append' })
+      let step = 0
+      for (const item of messages) {
+        if (item.role === 'user') {
+          this.agent.session.append('user/message', createUserMessage({
+            content: [{ type: 'text', text: item.content }], source: { kind: 'user' },
+          }), { surfaceOp: 'append' })
+        } else {
+          step += 1
+          this.agent.session.append('step/start', { turn: 0, step })
+          this.agent.session.append('assistant/message', {
+            turn: 0, step, stream: [],
+            message: createAssistantMessage({
+              content: [{ type: 'text', text: item.content }],
+              source: { provider: 'external', model: 'imported-history' },
+            }),
+          }, { surfaceOp: 'append' })
+          this.agent.session.append('step/end', { turn: 0, step })
+        }
+      }
+      this.agent.session.append('turn/end', { turn: 0, reason: { kind: 'completed' } })
+    } finally {
+      this.importingHistory = false
+    }
   }
 
   /**
@@ -343,6 +384,7 @@ export class AcpSession {
    * @param event - committed durable event.
    */
   onSessionEvent(session: Session, event: SessionEvent): void {
+    if (this.importingHistory) return
     try {
       if (event.type === 'assistant/message') {
         const inflight = this.inflight?.turn === event.data.turn ? this.inflight : undefined

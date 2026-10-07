@@ -5,6 +5,10 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-acp
 
+### Studio 歷史匯入擴充
+
+`unieai/history/import` 接受 `{ sessionId, messages: [{ role: "user" | "assistant", content: string }] }`，只允許在新會話第一次 prompt 前呼叫一次。每則歷史會個別加入會話表層，不執行模型，也不向客戶端重播舊助手輸出。匯入使用已關閉的合成第零輪記錄來源，實際對話仍從第一輪開始。回傳 `{ imported: number }`。無效訊息、重複匯入或非新會話會在追加前拒絕。匯入後以標準 `session/prompt` 傳入目前問題。此擴充只處理文字；圖片二進位資料必須經附件接納，不能放進文字歷史。
+
 [English](README.md) | 中文
 
 ## 概述

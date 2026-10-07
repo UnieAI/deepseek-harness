@@ -12,6 +12,7 @@ import { SessionPersistenceRevision, type SessionPersistenceSnapshot } from '@de
 import { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 import { makeBridgeHarness, textResponse, type BridgeHarness } from './harness.ts'
 import { startHttpMcpFixture } from '../../../mcp/mcp-client/tests/http-fixture.ts'
+import BasicCompactionEngine from '../../../compaction/compaction-basic/src/index.ts'
 
 /** Wrap a bare header as the snapshot shape `SessionPersistence.list` now returns. */
 function snapshotOf(header: SessionHeader): SessionPersistenceSnapshot {
@@ -97,6 +98,25 @@ describe('automation-only ACP bridge', () => {
     expect(harness.adapter.requests[0]?.messages.at(-1)?.content).toEqual([{ type: 'text', text: 'say hello' }])
   })
 
+  it('imports historical roles as separate surface messages before the live prompt', async () => {
+    harness = await makeBridgeHarness({ script: [textResponse('live answer')] })
+    await harness.client.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
+    const { sessionId } = await harness.client.newSession({ cwd: process.cwd(), mcpServers: [] })
+    const messages = [
+      { role: 'user' as const, content: 'old question' },
+      { role: 'assistant' as const, content: 'old answer' },
+    ]
+    await expect(harness.client.importHistory(sessionId, messages)).resolves.toEqual({ imported: 2 })
+    await expect(harness.client.importHistory(sessionId, messages)).rejects.toThrow(/once/)
+    expect(harness.updates).toEqual([])
+    await harness.client.prompt({ sessionId, prompt: [{ type: 'text', text: 'new question' }] })
+    expect(harness.adapter.requests[0]?.messages.map(message => message.role)).toEqual([
+      'system', 'user', 'assistant', 'user',
+    ])
+    expect(harness.adapter.requests[0]?.messages[1]?.content).toEqual([{ type: 'text', text: 'old question' }])
+    expect(harness.adapter.requests[0]?.messages[2]?.content).toEqual([{ type: 'text', text: 'old answer' }])
+  })
+
   it('closes one active session without affecting its neighbor', async () => {
     harness = await makeBridgeHarness()
     await harness.client.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
@@ -111,6 +131,25 @@ describe('automation-only ACP bridge', () => {
       sessionId: first.sessionId,
       prompt: [{ type: 'text', text: 'closed' }],
     })).rejects.toThrow(/unknown session/)
+  })
+
+  it('lets DSH compact imported history before its first conversation request', async () => {
+    harness = await makeBridgeHarness({ script: [textResponse('summary of earlier work'), textResponse('live answer')] })
+    await harness.ctx.plugin(BasicCompactionEngine, { thresholdRatio: 0.8, retainTokens: 1 })
+    await harness.client.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
+    const { sessionId } = await harness.client.newSession({ cwd: process.cwd(), mcpServers: [] })
+    await harness.client.importHistory(sessionId, [
+      { role: 'user', content: 'old question '.repeat(1000) },
+      { role: 'assistant', content: 'old answer '.repeat(1000) },
+      { role: 'user', content: 'recent question' },
+      { role: 'assistant', content: 'recent answer' },
+    ])
+    await harness.client.prompt({ sessionId, prompt: [{ type: 'text', text: 'latest question' }] })
+    expect(harness.adapter.requests[0]?.purpose).toBe('compaction')
+    expect(harness.adapter.requests.at(-1)?.messages.at(-1)?.content).toEqual([{ type: 'text', text: 'latest question' }])
+    expect(JSON.stringify(harness.adapter.requests.at(-1)?.messages)).toContain('summary of earlier work')
+    const events = harness.ctx.agents.get(SessionId(sessionId))!.session.snapshotEvents()
+    expect(events.some(event => event.type === 'compaction/summary')).toBe(true)
   })
 
   it('cancels a running prompt and makes its session resumable before close returns', async () => {

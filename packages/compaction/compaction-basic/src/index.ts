@@ -244,7 +244,8 @@ export class BasicCompactionEngine extends CompactionEngine {
 
   /**
    * Compact for replayed step-boundary pressure or one provider-confirmed context
-   * overflow. Both triggers price the latest durable routed request envelope;
+   * overflow. Before a durable route exists, the initial AgentOptions target
+   * supplies capacity for imported history. Both triggers price the surface;
    * overflow bypasses the normal threshold and retained-tail policy so it can
    * force one useful balanced reduction.
    * @param agent - agent whose latest durable routed request is measured.
@@ -257,7 +258,7 @@ export class BasicCompactionEngine extends CompactionEngine {
     trigger: CompactionTrigger,
     signal: AbortSignal,
   ): Promise<CompactionResult | null> {
-    const target = routedTarget(agent.session)
+    const target = conversationTarget(agent)
     if (target === undefined) return null
     const policy = resolveTargetPolicy(this.config, target)
     const meter = this.ctx.tokenMeter
