@@ -88,6 +88,23 @@ function requestId(headers: Headers): ReturnType<typeof ProviderRequestId> | und
   return value === null || value.length === 0 ? undefined : ProviderRequestId(value)
 }
 
+/** Retry once with the provider's reported remaining output capacity. The model's
+ * context limit is real; reducing an oversized output reservation does not alter
+ * or discard the user's input. If the input itself is too large, compaction owns it.
+ */
+export function remainingOutputTokens(message: string, requested: number | undefined): number | undefined {
+  if (requested === undefined) return undefined
+  const pattern = /maximum context length of (\d+) tokens[\s\S]*?(\d+) tokens from the input messages and (\d+) tokens for the completion/i
+  const match = pattern.exec(message)
+  if (!match) return undefined
+  const limit = Number(match[1])
+  const input = Number(match[2])
+  const completion = Number(match[3])
+  if (![limit, input, completion].every(Number.isSafeInteger) || completion !== requested) return undefined
+  const available = limit - input - 256
+  return available >= 1 && available < requested ? available : undefined
+}
+
 /**
  * Map an HTTP status to a stable LlmError code.
  * @param status - status of a non-2xx provider response.
@@ -274,7 +291,8 @@ export class ChatCompletionsAdapter extends LlmAdapter {
       ? undefined
       : (ref: ImageAttachmentRef): ImageAttachmentAccess | undefined => this.config.resolveImageAccess?.(attachments, ref)
     const imageAccessOptions = resolveImageAccess === undefined ? {} : { resolveImageAccess }
-    const requestOptions = options
+    let requestOptions = options
+    let reducedOutputReservation = false
     const requestImages = attachments === undefined || model === undefined
       ? new Map<AttachmentId, RequestImageAttachment>()
       : await prepareRequestImages(requestOptions, attachments, model, signal)
@@ -357,6 +375,14 @@ export class ChatCompletionsAdapter extends LlmAdapter {
           .filter((field): field is string => typeof field === 'string')
           .join(' ')
         if (await requestFiles.retry(detail)) continue
+        if (!reducedOutputReservation && response.status === 400 && isContextWindowExceededError(detail)) {
+          const reduced = remainingOutputTokens(providerError?.message ?? '', body.max_tokens)
+          if (reduced !== undefined) {
+            requestOptions = { ...requestOptions, maxTokens: reduced }
+            reducedOutputReservation = true
+            continue
+          }
+        }
         message = requestFiles.errorMessage(response.status, message, detail)
         const delay = providerRetryAfterMs(response.headers.get('retry-after'))
         const id = requestId(response.headers)

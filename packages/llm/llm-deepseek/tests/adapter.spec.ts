@@ -21,7 +21,7 @@ import DeepSeekLlmApiExtensionRegistry from '@deepseek-ai/dsh-deepseek-llm-api-e
 import type { PreparedDeepSeekLlmApiExtensions } from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
 import { DeepSeekAdapter, resolveAdapterOptions } from '@deepseek-ai/dsh-llm-deepseek'
-import { httpErrorCode } from '../src/protocols/chat-completions/adapter.ts'
+import { httpErrorCode, remainingOutputTokens } from '../src/protocols/chat-completions/adapter.ts'
 import { resolveRequestImageTarget } from '../src/common/request-pricing.ts'
 import { assemble } from './assemble.ts'
 import { closeMockServers, mockServer, textEvents } from './mock-server.ts'
@@ -1340,6 +1340,30 @@ describe('DeepSeekAdapter against a mock server', () => {
       kind: 'error',
       failure: { code: CONTEXT_WINDOW_EXCEEDED_CODE },
     })
+  })
+
+  it('retries once with the available output tokens when only the reservation overflows', async () => {
+    const server = await mockServer([
+      {
+        kind: 'http-error', status: 400,
+        body: JSON.stringify({ error: {
+          code: 'context_length_exceeded',
+          message: "Requested token count exceeds the model's maximum context length of 131072 tokens. You requested a total of 156026 tokens: 123258 tokens from the input messages and 32768 tokens for the completion.",
+        } }),
+      },
+      { kind: 'sse', events: textEvents },
+    ])
+    const adapter = adapterOf({ baseURL: server.url })
+    await drain(adapter.stream({
+      provider: 'deepseek-official', model: 'deepseek-v4-flash', messages: [], maxTokens: 32768,
+    }))
+    expect(server.requests).toHaveLength(2)
+    expect(server.requests[0]).toMatchObject({ max_tokens: 32768 })
+    expect(server.requests[1]).toMatchObject({ max_tokens: 7558 })
+  })
+
+  it('does not reduce output capacity if input already fills the context', () => {
+    expect(remainingOutputTokens('maximum context length of 131072 tokens; 131072 tokens from the input messages and 32768 tokens for the completion', 32768)).toBeUndefined()
   })
 
   it('retains status, Retry-After seconds, and provider request id as structured facts', async () => {
