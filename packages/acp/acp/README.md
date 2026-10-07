@@ -7,6 +7,8 @@ kind: "package-reference"
 
 ### Studio history import extension
 
+An optional `systemPrompt` string seeds the initial system surface so token measurement includes the deployment instructions before the first step. The deployment must register the same prompt with its system-prompt provider to preserve it during normal loop reconciliation.
+
 `unieai/history/import` accepts `{ sessionId, messages: [{ role: "user" | "assistant", content: string }] }` once on a fresh session, before its first prompt. It appends separate historical surface messages without running the model or replaying old assistant output to the client. A synthetic closed turn zero records imported provenance; live turns still begin at one. The response is `{ imported: number }`. Invalid messages and repeated or non-fresh imports fail before appending. Send the current question through the standard `session/prompt` method after import. This extension is text-only; binary image data must use attachment admission rather than text history.
 
 English | [中文](README.zh.md)

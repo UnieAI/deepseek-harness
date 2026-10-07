@@ -199,7 +199,7 @@ export class AcpSession {
   }
 
   /** Seed a fresh session with separate, model-visible historical messages. */
-  importHistory(messages: readonly { role: 'user' | 'assistant'; content: string }[]): void {
+  importHistory(messages: readonly { role: 'user' | 'assistant'; content: string }[], systemPrompt = ''): void {
     this.assertActive()
     if (this.inflight !== undefined || this.historyImported || this.agent.session.surface.nodes.length !== 0) {
       throw invalidParams('history can only be imported once into a fresh session')
@@ -210,7 +210,7 @@ export class AcpSession {
       this.agent.session.append('turn/start', { turn: 0 })
       // Reserve surface node zero for the system prompt the normal loop will reconcile.
       this.agent.session.append('system/message', {
-        turn: 0, step: 0, message: createSystemMessage('', 'acp-history'),
+        turn: 0, step: 0, message: createSystemMessage(systemPrompt, 'acp-history'),
       }, { surfaceOp: 'append' })
       let step = 0
       for (const item of messages) {

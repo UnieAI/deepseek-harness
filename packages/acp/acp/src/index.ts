@@ -389,7 +389,8 @@ export function apply(ctx: Context, config: AcpConfig): void {
     .onRequest(methods.agent.session.prompt, ({ params, signal }) => implementation.prompt(params, signal))
     .onRequest('unieai/history/import', (raw: unknown) => {
       if (raw === null || typeof raw !== 'object') throw invalidParams('history import requires an object')
-      const value = raw as { sessionId?: unknown; messages?: unknown }
+      const value = raw as { sessionId?: unknown; messages?: unknown; systemPrompt?: unknown }
+      if (value.systemPrompt !== undefined && typeof value.systemPrompt !== 'string') throw invalidParams('systemPrompt must be text')
       if (typeof value.sessionId !== 'string' || !Array.isArray(value.messages)) {
         throw invalidParams('history import requires sessionId and messages')
       }
@@ -401,10 +402,10 @@ export function apply(ctx: Context, config: AcpConfig): void {
         }
         return { role: message.role, content: message.content }
       })
-      return { sessionId: value.sessionId, messages }
+      return { sessionId: value.sessionId, messages, systemPrompt: value.systemPrompt as string | undefined }
     }, ({ params }) => {
       assertOpen()
-      requireSession(brandString<SessionId>(params.sessionId)).importHistory(params.messages)
+      requireSession(brandString<SessionId>(params.sessionId)).importHistory(params.messages, params.systemPrompt)
       return { imported: params.messages.length }
     })
     .onNotification(methods.agent.session.cancel, ({ params }) => implementation.cancel(params))
