@@ -196,6 +196,26 @@ export function apply(ctx: Context, config: AcpConfig): void {
     async newSession(params: NewSessionRequest, signal: AbortSignal): Promise<NewSessionResponse> {
       assertOpen()
       validateWorkspaceParams(params)
+      const rawHistory = params._meta?.unieaiHistory
+      let history: { messages: { role: 'user' | 'assistant'; content: string }[]; systemPrompt: string } | undefined
+      if (rawHistory !== undefined) {
+        if (rawHistory === null || typeof rawHistory !== 'object') throw invalidParams('invalid history metadata')
+        const value = rawHistory as { messages?: unknown; systemPrompt?: unknown }
+        if (!Array.isArray(value.messages) || (value.systemPrompt !== undefined && typeof value.systemPrompt !== 'string')) {
+          throw invalidParams('history requires messages and optional text systemPrompt')
+        }
+        history = {
+          systemPrompt: typeof value.systemPrompt === 'string' ? value.systemPrompt : '',
+          messages: value.messages.map((item: unknown): { role: 'user' | 'assistant'; content: string } => {
+            if (item === null || typeof item !== 'object') throw invalidParams('invalid history message')
+            const message = item as { role?: unknown; content?: unknown }
+            if ((message.role !== 'user' && message.role !== 'assistant') || typeof message.content !== 'string') {
+              throw invalidParams('history messages require a user or assistant role and string content')
+            }
+            return { role: message.role, content: message.content }
+          }),
+        }
+      }
       const sessionId = brandString<SessionId>(randomUUID())
       // No preset composition: the ACP bundle keeps the model-facing rows in
       // the host plane, so this agent reads them from the global layer. A
@@ -205,6 +225,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
       try {
         record = await AcpSession.create(ctx, {
           sessionId,
+          ...history === undefined ? {} : { history },
           cwd: params.cwd,
           mcpServers: params.mcpServers,
           agentOptions: agentOptions(config),
@@ -387,27 +408,6 @@ export function apply(ctx: Context, config: AcpConfig): void {
     .onRequest(methods.agent.session.close, ({ params }) => implementation.closeSession(params))
     .onRequest(methods.agent.session.setConfigOption, ({ params, signal }) => implementation.setSessionConfigOption(params, signal))
     .onRequest(methods.agent.session.prompt, ({ params, signal }) => implementation.prompt(params, signal))
-    .onRequest('unieai/history/import', (raw: unknown) => {
-      if (raw === null || typeof raw !== 'object') throw invalidParams('history import requires an object')
-      const value = raw as { sessionId?: unknown; messages?: unknown; systemPrompt?: unknown }
-      if (value.systemPrompt !== undefined && typeof value.systemPrompt !== 'string') throw invalidParams('systemPrompt must be text')
-      if (typeof value.sessionId !== 'string' || !Array.isArray(value.messages)) {
-        throw invalidParams('history import requires sessionId and messages')
-      }
-      const messages = value.messages.map((item: unknown): { role: 'user' | 'assistant'; content: string } => {
-        if (item === null || typeof item !== 'object') throw invalidParams('invalid history message')
-        const message = item as { role?: unknown; content?: unknown }
-        if ((message.role !== 'user' && message.role !== 'assistant') || typeof message.content !== 'string') {
-          throw invalidParams('history messages require a user or assistant role and string content')
-        }
-        return { role: message.role, content: message.content }
-      })
-      return { sessionId: value.sessionId, messages, systemPrompt: value.systemPrompt as string | undefined }
-    }, ({ params }) => {
-      assertOpen()
-      requireSession(brandString<SessionId>(params.sessionId)).importHistory(params.messages, params.systemPrompt)
-      return { imported: params.messages.length }
-    })
     .onNotification(methods.agent.session.cancel, ({ params }) => implementation.cancel(params))
   const connection = app.connect(stream)
   const conn: AgentContext = connection.client

@@ -101,13 +101,12 @@ describe('automation-only ACP bridge', () => {
   it('imports historical roles as separate surface messages before the live prompt', async () => {
     harness = await makeBridgeHarness({ script: [textResponse('live answer')] })
     await harness.client.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
-    const { sessionId } = await harness.client.newSession({ cwd: process.cwd(), mcpServers: [] })
     const messages = [
       { role: 'user' as const, content: 'old question' },
       { role: 'assistant' as const, content: 'old answer' },
     ]
-    await expect(harness.client.importHistory(sessionId, messages)).resolves.toEqual({ imported: 2 })
-    await expect(harness.client.importHistory(sessionId, messages)).rejects.toThrow(/once/)
+    const { sessionId } = await harness.client.newSession({ cwd: process.cwd(), mcpServers: [], _meta: { unieaiHistory: { messages } } })
+    await expect(harness.client.newSession({ cwd: process.cwd(), mcpServers: [], _meta: { unieaiHistory: { messages: [{ role: 'tool', content: 'invalid' }] } } })).rejects.toThrow(/user or assistant/)
     expect(harness.updates).toEqual([])
     await harness.client.prompt({ sessionId, prompt: [{ type: 'text', text: 'new question' }] })
     expect(harness.adapter.requests[0]?.messages.map(message => message.role)).toEqual([
@@ -137,13 +136,13 @@ describe('automation-only ACP bridge', () => {
     harness = await makeBridgeHarness({ script: [textResponse('summary of earlier work'), textResponse('live answer')] })
     await harness.ctx.plugin(BasicCompactionEngine, { thresholdRatio: 0.8, retainTokens: 1 })
     await harness.client.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
-    const { sessionId } = await harness.client.newSession({ cwd: process.cwd(), mcpServers: [] })
-    await harness.client.importHistory(sessionId, [
+    const messages = [
       { role: 'user', content: 'old question '.repeat(1000) },
       { role: 'assistant', content: 'old answer '.repeat(1000) },
       { role: 'user', content: 'recent question' },
       { role: 'assistant', content: 'recent answer' },
-    ])
+    ]
+    const { sessionId } = await harness.client.newSession({ cwd: process.cwd(), mcpServers: [], _meta: { unieaiHistory: { messages } } })
     await harness.client.prompt({ sessionId, prompt: [{ type: 'text', text: 'latest question' }] })
     expect(harness.adapter.requests[0]?.purpose).toBe('compaction')
     expect(harness.adapter.requests.at(-1)?.messages.at(-1)?.content).toEqual([{ type: 'text', text: 'latest question' }])

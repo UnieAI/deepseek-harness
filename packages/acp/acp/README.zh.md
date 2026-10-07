@@ -9,7 +9,7 @@ kind: "package-reference"
 
 可選的 `systemPrompt` 字串會初始化系統提示詞表層，使第一次 step 前的 token 測量包含部署指令。部署必須在 system-prompt provider 註冊同一份提示詞，才能在正常迴圈調整時保留它。
 
-`unieai/history/import` 接受 `{ sessionId, messages: [{ role: "user" | "assistant", content: string }] }`，只允許在新會話第一次 prompt 前呼叫一次。每則歷史會個別加入會話表層，不執行模型，也不向客戶端重播舊助手輸出。匯入使用已關閉的合成第零輪記錄來源，實際對話仍從第一輪開始。回傳 `{ imported: number }`。無效訊息、重複匯入或非新會話會在追加前拒絕。匯入後以標準 `session/prompt` 傳入目前問題。此擴充只處理文字；圖片二進位資料必須經附件接納，不能放進文字歷史。
+標準 `session/new` 請求接受 `_meta.unieaiHistory: { messages: [{ role: "user" | "assistant", content: string }], systemPrompt?: string }`。每則歷史會在建立 Agent 前加入已完成、輪次與步驟均為正數的合法 session seed，實際迴圈會從 seed 推導下一輪次。建立時不執行模型，也不向客戶端重播舊助手輸出。無效歷史會在發布 session 前拒絕。建立後以 `session/prompt` 傳入目前問題。此擴充只處理文字；圖片二進位資料必須經附件接納，不能放進文字歷史。
 
 [English](README.md) | 中文
 

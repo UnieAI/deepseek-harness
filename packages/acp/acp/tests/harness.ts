@@ -192,7 +192,6 @@ interface BridgeClient {
   setSessionConfigOption: NonNullable<AcpAgent['setSessionConfigOption']>
   prompt: (params: PromptRequest, options?: SendRequestOptions) => Promise<PromptResponse>
   cancel: NonNullable<AcpAgent['cancel']>
-  importHistory: (sessionId: string, messages: { role: 'user' | 'assistant'; content: string }[]) => Promise<{ imported: number }>
 }
 
 export interface BridgeHarness {
@@ -305,7 +304,6 @@ export async function makeBridgeHarness(options: {
     setSessionConfigOption: params => client.request(methods.agent.session.setConfigOption, params),
     prompt: (params, options) => client.request(methods.agent.session.prompt, params, options),
     cancel: params => client.notify(methods.agent.session.cancel, params),
-    importHistory: (sessionId, messages) => client.request('unieai/history/import', { sessionId, messages }),
   }
   return harness
 }
