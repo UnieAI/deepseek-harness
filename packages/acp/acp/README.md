@@ -5,12 +5,6 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-acp
 
-### Studio history import extension
-
-An optional `systemPrompt` string seeds the initial system surface so token measurement includes the deployment instructions before the first step. The deployment must register the same prompt with its system-prompt provider to preserve it during normal loop reconciliation.
-
-The standard `session/new` request accepts `_meta.unieaiHistory: { messages: [{ role: "user" | "assistant", content: string }], systemPrompt?: string }`. Separate historical messages become a balanced, completed session seed before Agent construction, so the live loop derives its next turn from validated positive turn/step numbers. Creation makes no model call and does not replay old assistant output. Invalid history rejects session creation before publication. Send the current question through `session/prompt` after creation. This extension is text-only; binary image data must use attachment admission rather than text history.
-
 English | [中文](README.zh.md)
 
 ## Summary
@@ -32,6 +26,12 @@ English | [中文](README.zh.md)
 ## Use this package
 
 Use this package when a script, test runner, or another harness needs to run agent work end to end through a standard automation protocol. The common path is: start the server, create or resume a session, optionally mount MCP servers and select model options, send a prompt, consume semantic updates, and close the session.
+
+### Studio history import extension
+
+An optional `systemPrompt` string seeds the initial system surface so token measurement includes the deployment instructions before the first step. The deployment must register the same prompt with its system-prompt provider to preserve it during normal loop reconciliation.
+
+The standard `session/new` request accepts `_meta.unieaiHistory: { messages: [{ role: "user" | "assistant", content: string }], systemPrompt?: string }`. Separate historical messages become a balanced, completed session seed before Agent construction, so the live loop derives its next turn from validated positive turn/step numbers. Creation makes no model call and does not replay old assistant output. Invalid history rejects session creation before publication. Send the current question through `session/prompt` after creation. This extension is text-only; binary image data must use attachment admission rather than text history.
 
 ### When to choose it
 
