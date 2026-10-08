@@ -91,6 +91,10 @@ function requestId(headers: Headers): ReturnType<typeof ProviderRequestId> | und
 /** Retry once with the provider's reported remaining output capacity. The model's
  * context limit is real; reducing an oversized output reservation does not alter
  * or discard the user's input. If the input itself is too large, compaction owns it.
+ * @param message - the provider's context overflow error text.
+ * @param requested - the output token reservation in the rejected request.
+ * @returns the smaller output reservation, or undefined if the input cannot fit
+ * or the provider does not report matching token counts.
  */
 export function remainingOutputTokens(message: string, requested: number | undefined): number | undefined {
   if (requested === undefined) return undefined
