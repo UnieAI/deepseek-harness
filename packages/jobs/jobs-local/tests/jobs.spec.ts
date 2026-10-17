@@ -756,7 +756,7 @@ describe('LocalJobRegistry owner isolation', () => {
     const ctx = await harness()
     const alice = stubAgent(ctx, 'alice')
     ctx.agents.register(alice)
-    const openTask = ctx.jobs.start(producer({ kind: 'subagent' }).spec)
+    const openTask = ctx.jobs.start(producer({ kind: 'test-task' }).spec)
 
     expect(() => ctx.jobs.read(openTask, alice.id)).toThrow('belongs to another session')
     expect(() => ctx.jobs.kill(openTask, alice.id)).toThrow('belongs to another session')
